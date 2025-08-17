@@ -206,5 +206,170 @@ with fundamental_data :
         except Exception as e:
             st.error(f"❌ Unexpected error: {str(e)}")
 
-with news :
-    st.write('News')
+with news:
+    st.header(f'📰 Latest News for {ticker}')
+    
+    try:
+        from stocknews import StockNews
+        
+        with st.spinner('Loading latest news...'):
+            sn = StockNews(ticker, save_news=False)
+            df_news = sn.read_rss()
+        
+        if df_news is not None and not df_news.empty:
+            # 뉴스 개수 확인 (최대 10개)
+            news_count = min(10, len(df_news))
+            st.success(f"✅ Found {news_count} news articles")
+            
+            # 감정 분석 색상 함수
+            def get_sentiment_color(sentiment):
+                # numpy 타입을 문자열로 안전하게 변환
+                sentiment_str = str(sentiment).lower() if sentiment is not None else 'neutral'
+                
+                if 'positive' in sentiment_str or sentiment_str == '1' or sentiment_str == '1.0':
+                    return '🟢', '#28a745'
+                elif 'negative' in sentiment_str or sentiment_str == '-1' or sentiment_str == '-1.0':
+                    return '🔴', '#dc3545'
+                else:
+                    return '🟡', '#ffc107'
+            
+            def safe_capitalize(value):
+                """안전하게 문자열로 변환하고 첫 글자를 대문자로"""
+                if value is None:
+                    return 'N/A'
+                
+                str_value = str(value).lower()
+                
+                # 숫자 값을 감정으로 변환
+                if str_value == '1' or str_value == '1.0':
+                    return 'Positive'
+                elif str_value == '-1' or str_value == '-1.0':
+                    return 'Negative'
+                elif str_value == '0' or str_value == '0.0':
+                    return 'Neutral'
+                else:
+                    return str_value.capitalize()
+            
+            # 뉴스 카드 스타일
+            for i in range(news_count):
+                try:
+                    # 뉴스 데이터 추출 (안전하게 처리)
+                    published = str(df_news['published'].iloc[i]) if 'published' in df_news.columns else 'N/A'
+                    title = str(df_news['title'].iloc[i]) if 'title' in df_news.columns else 'No Title'
+                    summary = str(df_news['summary'].iloc[i]) if 'summary' in df_news.columns else 'No Summary'
+                    title_sentiment = df_news['sentiment_title'].iloc[i] if 'sentiment_title' in df_news.columns else 'neutral'
+                    summary_sentiment = df_news['sentiment_summary'].iloc[i] if 'sentiment_summary' in df_news.columns else 'neutral'
+                    
+                    # 감정 분석 아이콘과 색상 (안전하게 처리)
+                    title_icon, title_color = get_sentiment_color(title_sentiment)
+                    summary_icon, summary_color = get_sentiment_color(summary_sentiment)
+                    
+                    # 감정 텍스트 안전하게 변환
+                    title_sentiment_text = safe_capitalize(title_sentiment)
+                    summary_sentiment_text = safe_capitalize(summary_sentiment)
+                    
+                    # 뉴스 카드 생성
+                    with st.container():
+                        # 카드 헤더
+                        st.markdown(f"""
+                        <div style="
+                            background-color: #f8f9fa;
+                            border-left: 4px solid #007bff;
+                            padding: 1rem;
+                            margin: 1rem 0;
+                            border-radius: 0.5rem;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        ">
+                        <h4 style="margin: 0 0 0.5rem 0; color: #333;">📰 News #{i+1}</h4>
+                        <p style="margin: 0; color: #666; font-size: 0.9rem;">📅 {published}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        # 제목과 요약을 컬럼으로 배치
+                        col1, col2 = st.columns([3, 1])
+                        
+                        with col1:
+                            st.markdown(f"**📄 Title:** {title}")
+                            st.markdown(f"**📝 Summary:** {summary}")
+                        
+                        with col2:
+                            st.markdown("**🎭 Sentiment Analysis**")
+                            st.markdown(f"{title_icon} **Title:** {title_sentiment_text}")
+                            st.markdown(f"{summary_icon} **Summary:** {summary_sentiment_text}")
+                            
+                            # 디버그 정보 (개발 중에만 표시)
+                            if st.checkbox(f"Show debug info #{i+1}", key=f"debug_{i}"):
+                                st.write(f"Raw title sentiment: {title_sentiment} (type: {type(title_sentiment)})")
+                                st.write(f"Raw summary sentiment: {summary_sentiment} (type: {type(summary_sentiment)})")
+                        
+                        # 구분선
+                        st.divider()
+                        
+                except Exception as e:
+                    st.error(f"Error displaying news #{i+1}: {str(e)}")
+                    continue
+            
+            # 전체 감정 분석 요약 (안전하게 처리)
+            if news_count > 0:
+                st.subheader("📊 Overall Sentiment Analysis")
+                
+                try:
+                    # 감정 분석 통계 (numpy 타입 안전하게 처리)
+                    if 'sentiment_title' in df_news.columns:
+                        title_sentiments = df_news['sentiment_title'].head(news_count).apply(safe_capitalize).value_counts()
+                    else:
+                        title_sentiments = {}
+                        
+                    if 'sentiment_summary' in df_news.columns:
+                        summary_sentiments = df_news['sentiment_summary'].head(news_count).apply(safe_capitalize).value_counts()
+                    else:
+                        summary_sentiments = {}
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write("**Title Sentiments:**")
+                        if title_sentiments.empty:
+                            st.write("No title sentiment data available")
+                        else:
+                            for sentiment, count in title_sentiments.items():
+                                icon, _ = get_sentiment_color(sentiment)
+                                percentage = (count / news_count) * 100
+                                st.write(f"{icon} {sentiment}: {count} ({percentage:.1f}%)")
+                    
+                    with col2:
+                        st.write("**Summary Sentiments:**")
+                        if summary_sentiments.empty:
+                            st.write("No summary sentiment data available")
+                        else:
+                            for sentiment, count in summary_sentiments.items():
+                                icon, _ = get_sentiment_color(sentiment)
+                                percentage = (count / news_count) * 100
+                                st.write(f"{icon} {sentiment}: {count} ({percentage:.1f}%)")
+                                
+                except Exception as e:
+                    st.error(f"Error in sentiment analysis summary: {str(e)}")
+                    st.write("Raw sentiment data types:")
+                    if 'sentiment_title' in df_news.columns:
+                        st.write(f"Title sentiments type: {type(df_news['sentiment_title'].iloc[0])}")
+                    if 'sentiment_summary' in df_news.columns:
+                        st.write(f"Summary sentiments type: {type(df_news['sentiment_summary'].iloc[0])}")
+        
+        else:
+            st.warning(f"⚠️ No news articles found for {ticker}")
+            st.info("💡 This could happen if:")
+            st.write("- The ticker symbol is incorrect")
+            st.write("- No recent news available for this stock")
+            st.write("- RSS feed is temporarily unavailable")
+            
+    except ImportError:
+        st.error("❌ stocknews package not installed!")
+        st.code("pip install stocknews", language="bash")
+        st.info("💡 Alternative: You can search for news manually on financial websites")
+        
+    except Exception as e:
+        st.error(f"❌ Error loading news: {str(e)}")
+        st.info("💡 Possible issues:")
+        st.write("- Network connection problem")
+        st.write("- RSS feed temporarily unavailable") 
+        st.write("- Invalid ticker symbol")
